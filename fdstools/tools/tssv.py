@@ -105,14 +105,14 @@ IUPAC_BITS = str.maketrans("ACGTUMRSWYKVHDBN", "ABDHHCEFIJLGKMNO")
 
 class TSSV:
     def __init__(self, library, flank_length, threshold, indel_score, dirname, workers,
-                 deduplicate, infile):
+                 deduplicate, infile, single_anchor):
         # User inputs.
         self.library = library
         self.indel_score = indel_score
         self.workers = workers
         self.deduplicate = deduplicate
         self.lock = Lock()
-
+        self.single_anchor = single_anchor
         # Convert library.
         refseq_store = library.get_structure_store().get_refseq_store()
         self.has_iupac = False
@@ -216,12 +216,20 @@ class TSSV:
                     sequences[seq1] = [1, 0]
                 if self.outfiles:
                     write_sequence_record(self.outfiles["markers"][marker]["paired"], record)
-            elif self.outfiles:
-                if matches & 0b0001:
-                    write_sequence_record(self.outfiles["markers"][marker]["noend"], record)
-                if matches & 0b0010:
-                    write_sequence_record(self.outfiles["markers"][marker]["nostart"], record)
-
+            
+            if seq1 is None:
+                if self.single_anchor:
+                    if (matches & 0b0001) | (matches & 0b0010):
+                        try:
+                            sequences[seq1][0] += 1
+                        except KeyError:
+                            sequences[seq1] = [1, 0]
+                if self.outfiles:
+                    if matches & 0b0001:
+                        write_sequence_record(self.outfiles["markers"][marker]["noend"], record)
+                    if matches & 0b0010:
+                        write_sequence_record(self.outfiles["markers"][marker]["nostart"], record)
+            
             # Search in the reverse strand.
             if seq2 is not None:
                 counters["rPaired"] += 1
@@ -231,12 +239,19 @@ class TSSV:
                     sequences[seq2] = [0, 1]
                 if self.outfiles:
                     write_sequence_record(self.outfiles["markers"][marker]["paired"], record)
-            elif self.outfiles:
-                if matches & 0b0100:
-                    write_sequence_record(self.outfiles["markers"][marker]["noend"], record)
-                if matches & 0b1000:
-                    write_sequence_record(self.outfiles["markers"][marker]["nostart"], record)
-
+            if seq2 is None:
+                if self.single_anchor:
+                    if (matches & 0b0100) | (matches & 0b1000):
+                        try:
+                            sequences[seq2][0] += 1
+                        except KeyError:
+                            sequences[seq2] = [1, 0]
+                if self.outfiles:
+                    if matches & 0b0100:
+                        write_sequence_record(self.outfiles["markers"][marker]["noend"], record)
+                    if matches & 0b1000:
+                        write_sequence_record(self.outfiles["markers"][marker]["nostart"], record)
+        
         if not recognised:
             self.unrecognised += 1
             if self.outfiles:
@@ -623,9 +638,9 @@ def init_sequence_file_read(rawfile):
 
 def run_tssv_lite(infile, outfile, reportfile, library, flank_length, seqformat, threshold,
                   minimum, aggregate_filtered, missing_marker_action, dirname, indel_score,
-                  workers, no_deduplicate):
+                  workers, no_deduplicate, single_anchor):
     tssv = TSSV(library, flank_length, threshold, indel_score, dirname, workers,
-        not no_deduplicate, infile)
+        not no_deduplicate, infile, single_anchor)
     tssv.process_file()
     tssv.filter_sequences(aggregate_filtered, minimum, missing_marker_action)
 
@@ -684,6 +699,12 @@ def add_arguments(parser):
         choices=("include", "exclude", "halt"), default="include",
         help="action to take when no sequences are linked to a marker: one of "
              "%(choices)s (default: %(default)s)")
+     filtergroup.add_argument("-B", "--single_anchor", dest="single_anchor",
+        action="store_false",
+        help="by default, both flanking regions must be present in the overlap region of the merged pair; "
+             "specify this option to relax this required so that at least one of the flanking regions must be "
+             "present in the overlap region.")
+
 #add_arguments
 
 
@@ -695,7 +716,7 @@ def run(args):
     run_tssv_lite(infile, files[1], args.report, args.library, args.flank_length,
                   args.sequence_format, args.mismatches, args.minimum,
                   args.aggregate_filtered, args.missing_marker_action,
-                  args.dir, args.indel_score, args.num_threads, args.no_deduplicate)
+                  args.dir, args.indel_score, args.num_threads, args.no_deduplicate, args.single_anchor)
     if infile != sys.stdin.buffer:
         infile.close()
 #run
