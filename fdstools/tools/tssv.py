@@ -209,21 +209,15 @@ class TSSV:
 
             # Search in the forward strand.
             if seq1 is not None:
-                counters["fPaired"] += 1
+                if matches & 0b0011:
+                    counters["fPaired"] += 1
                 try:
                     sequences[seq1][0] += 1
                 except KeyError:
                     sequences[seq1] = [1, 0]
                 if self.outfiles:
                     write_sequence_record(self.outfiles["markers"][marker]["paired"], record)
-            
-            if seq1 is None:
-                if self.single_anchor:
-                    if (matches & 0b0001) | (matches & 0b0010):
-                        try:
-                            sequences[seq1][0] += 1
-                        except KeyError:
-                            sequences[seq1] = [1, 0]
+            else:
                 if self.outfiles:
                     if matches & 0b0001:
                         write_sequence_record(self.outfiles["markers"][marker]["noend"], record)
@@ -232,20 +226,15 @@ class TSSV:
             
             # Search in the reverse strand.
             if seq2 is not None:
-                counters["rPaired"] += 1
+                if matches & 0b1100:
+                    counters["rPaired"] += 1
                 try:
                     sequences[seq2][1] += 1
                 except KeyError:
                     sequences[seq2] = [0, 1]
                 if self.outfiles:
                     write_sequence_record(self.outfiles["markers"][marker]["paired"], record)
-            if seq2 is None:
-                if self.single_anchor:
-                    if (matches & 0b0100) | (matches & 0b1000):
-                        try:
-                            sequences[seq2][0] += 1
-                        except KeyError:
-                            sequences[seq2] = [1, 0]
+            else:
                 if self.outfiles:
                     if matches & 0b0100:
                         write_sequence_record(self.outfiles["markers"][marker]["noend"], record)
@@ -259,7 +248,7 @@ class TSSV:
     #process_results
 
 
-    def process_file(self):
+    def process_file(self,single_anchor):
         if self.workers == 1:
             for seq in self.dedup_reads():
                 self.cache_results(seq, process_sequence(
@@ -270,7 +259,7 @@ class TSSV:
             done_queue = SimpleQueue()
             chunksize = 1000000 // (4 * len(self.tssv_library)) or 1
             thread = Thread(target=feeder, args=(self.dedup_reads(), self.tssv_library,
-                self.indel_score, self.has_iupac, self.workers, chunksize, done_queue))
+                self.indel_score, self.has_iupac, self.workers, chunksize, done_queue, single_anchor))
             thread.daemon = True
             thread.start()
 
@@ -471,7 +460,7 @@ def prune_matched_ranges(tssv_library, matched_ranges):
 #prune_matched_ranges
 
 
-def process_sequence(tssv_library, indel_score, has_iupac, seq):
+def process_sequence(tssv_library, indel_score, has_iupac, seq, single_anchor):
     """Find markers in sequence."""
     seqs = (seq, reverse_complement(seq))
     seqs_up = tuple((x, x.translate(IUPAC_BITS) if has_iupac else None)
@@ -511,6 +500,17 @@ def process_sequence(tssv_library, indel_score, has_iupac, seq):
             # Matched pair in reverse sequence.
             matched_ranges.append((len(seq) - algn[1][1][1], len(seq) - algn[1][0][1],
                 seqs[1][algn[1][0][1] : algn[1][1][1]], 1, marker))
+        
+        if single_anchor:
+            if ((matches & 0b0011) == 0b0010 or (matches & 0b0011) == 0b0001)) and algn[0][0][1] < algn[0][1][1]:
+                # Single anchor in forward sequence.
+                matched_ranges.append((algn[0][0][1], algn[0][1][1],
+                    seqs[0][algn[0][0][1] : algn[0][1][1]], 0, marker))
+            if ((matches & 0b1100) == 0b1000 or (matches & 0b1100) == 0b0100)) and algn[1][0][1] < algn[1][1][1]:
+                # Single anchor in reverse sequence.
+                matched_ranges.append((len(seq) - algn[1][1][1], len(seq) - algn[1][0][1],
+                    seqs[1][algn[1][0][1] : algn[1][1][1]], 1, marker))
+        
         marker_matches[marker] = matches
 
     # Eliminate overlapping matched pairs.
@@ -530,22 +530,30 @@ def process_sequence(tssv_library, indel_score, has_iupac, seq):
 
 def seq_pass_filt(sequence, reads, threshold, explen=None):
     """Return False if the sequence does not meet the criteria."""
-    return (reads >= threshold and PAT_SEQ_RAW.match(sequence) is not None and
-        (explen is None or explen[0] <= len(sequence) <= explen[1]))
+    try: 
+        return (reads >= threshold and PAT_SEQ_RAW.match(sequence) is not None and
+            (explen is None or explen[0] <= len(sequence) <= explen[1]))
+    except:
+        print(sequence)
+        print(reads)
+        print(threshold)
+        #print(PAT_SEQ_RAW.match(sequence) )
+        print(explen)
+        raise
 #seq_pass_filt
 
 
-def worker(tssv_library, indel_score, has_iupac, task_queue, done_queue):
+def worker(tssv_library, indel_score, has_iupac, task_queue, done_queue, single_anchor):
     """
     Read sequences from task_queue, write findings to done_queue.
     """
     for task in iter(task_queue.get, None):
         done_queue.put(tuple(
-            (seq, process_sequence(tssv_library, indel_score, has_iupac, seq)) for seq in task))
+            (seq, process_sequence(tssv_library, indel_score, has_iupac, seq, single_anchor)) for seq in task))
 #worker
 
 
-def feeder(input, tssv_library, indel_score, has_iupac, workers, chunksize, done_queue):
+def feeder(input, tssv_library, indel_score, has_iupac, workers, chunksize, done_queue, single_anchor):
     """
     Start worker processes, feed them sequences from input and have them
     write their results to done_queue.
@@ -554,7 +562,7 @@ def feeder(input, tssv_library, indel_score, has_iupac, workers, chunksize, done
     processes = []
     for i in range(workers):
         process = Process(target=worker,
-            args=(tssv_library, indel_score, has_iupac, task_queue, done_queue))
+            args=(tssv_library, indel_score, has_iupac, task_queue, done_queue, single_anchor))
         process.daemon = True
         process.start()
         processes.append(process)
@@ -641,7 +649,7 @@ def run_tssv_lite(infile, outfile, reportfile, library, flank_length, seqformat,
                   workers, no_deduplicate, single_anchor):
     tssv = TSSV(library, flank_length, threshold, indel_score, dirname, workers,
         not no_deduplicate, infile, single_anchor)
-    tssv.process_file()
+    tssv.process_file(single_anchor)
     tssv.filter_sequences(aggregate_filtered, minimum, missing_marker_action)
 
     try:
@@ -700,7 +708,7 @@ def add_arguments(parser):
         help="action to take when no sequences are linked to a marker: one of "
              "%(choices)s (default: %(default)s)")
     filtergroup.add_argument("-S", "--single_anchor", dest="single_anchor",
-        action="store_false",
+        action="store_true",
         help="by default, both flanking regions must be present in the overlap region of the merged pair; "
              "specify this option to relax this required so that at least one of the flanking regions must be "
              "present in the overlap region.")
