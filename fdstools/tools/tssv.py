@@ -699,7 +699,7 @@ def add_arguments(parser):
         choices=("include", "exclude", "halt"), default="include",
         help="action to take when no sequences are linked to a marker: one of "
              "%(choices)s (default: %(default)s)")
-    filtergroup.add_argument("-B", "--single_anchor", dest="single_anchor",
+    filtergroup.add_argument("-S", "--single_anchor", dest="single_anchor",
         action="store_false",
         help="by default, both flanking regions must be present in the overlap region of the merged pair; "
              "specify this option to relax this required so that at least one of the flanking regions must be "
