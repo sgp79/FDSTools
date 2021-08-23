@@ -145,6 +145,8 @@ def load_data(infile, library=None):
                 columns[colid_sequence], "tssv", marker=marker, library=library)
 
             if columns[colid_sequence] not in SEQ_SPECIAL_VALUES:
+                #fix for the --single_anchor option, where the non-overlap region is lowercase
+                columns[colid_sequence] = columns[colid_sequence].upper()  
                 # Split the sequence column into a list of tuples:
                 # [('ACTG', 4), ('CCTC', 12), ...]
                 columns[colid_sequence] = [[x[0], int(x[1])] for x in

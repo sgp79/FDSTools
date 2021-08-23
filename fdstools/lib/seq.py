@@ -26,6 +26,7 @@ from strnaming import libsequence
 
 # Patterns that match entire sequences.
 PAT_SEQ_RAW = re.compile("^[ACGT]*$")
+PAT_SEQ_RAW_WITH_LOWER = re.compile("^[ACGTacgt]*$")
 PAT_SEQ_IUPAC = re.compile("^[ACGTUWSMKRYBDHVN]*$")
 PAT_SEQ_TSSV = re.compile("^(?:[ACGT]+\(\d+\))*$")
 PAT_SEQ_ALLELENAME_STR = re.compile(
@@ -59,7 +60,7 @@ def detect_sequence_format(seq):
     if seq in SEQ_SPECIAL_VALUES:
         # Special case.
         return False
-    if PAT_SEQ_RAW.match(seq):
+    if PAT_SEQ_RAW_WITH_LOWER.match(seq):
         return "raw"
     if PAT_SEQ_TSSV.match(seq):
         return "tssv"
