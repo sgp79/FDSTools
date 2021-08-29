@@ -491,22 +491,22 @@ def process_sequence(tssv_library, indel_score, has_iupac, seq, single_anchor):
             if cutout.lower() != cutout:
                 matches += 0b1000
         
+        if (matches & 0b0011) == 0b0011 and algn[0][0][1] < algn[0][1][1]:
+            # Matched pair in forward sequence.
+            matched_ranges.append((algn[0][0][1], algn[0][1][1],
+                seqs[0][algn[0][0][1] : algn[0][1][1]], 0, marker))
+        if (matches & 0b1100) == 0b1100 and algn[1][0][1] < algn[1][1][1]:
+            # Matched pair in reverse sequence.
+            matched_ranges.append((len(seq) - algn[1][1][1], len(seq) - algn[1][0][1],
+                seqs[1][algn[1][0][1] : algn[1][1][1]], 1, marker))
+        
         if single_anchor:
-            if ((matches & 0b0011) == 0b0010) or ((matches & 0b0011) == 0b0001) and algn[0][0][1] < algn[0][1][1]:
+            if ((matches & 0b0011) == 0b0010 or (matches & 0b0011) == 0b0001) and algn[0][0][1] < algn[0][1][1]:
                 # Single anchor in forward sequence.
                 matched_ranges.append((algn[0][0][1], algn[0][1][1],
                     seqs[0][algn[0][0][1] : algn[0][1][1]], 0, marker))
-            if ((matches & 0b1100) == 0b1000) or ((matches & 0b1100) == 0b0100) and algn[1][0][1] < algn[1][1][1]:
+            if ((matches & 0b1100) == 0b1000 or (matches & 0b1100) == 0b0100) and algn[1][0][1] < algn[1][1][1]:
                 # Single anchor in reverse sequence.
-                matched_ranges.append((len(seq) - algn[1][1][1], len(seq) - algn[1][0][1],
-                    seqs[1][algn[1][0][1] : algn[1][1][1]], 1, marker))
-        else:
-            if (matches & 0b0011) == 0b0011 and algn[0][0][1] < algn[0][1][1]:
-                # Matched pair in forward sequence.
-                matched_ranges.append((algn[0][0][1], algn[0][1][1],
-                    seqs[0][algn[0][0][1] : algn[0][1][1]], 0, marker))
-            if (matches & 0b1100) == 0b1100 and algn[1][0][1] < algn[1][1][1]:
-                # Matched pair in reverse sequence.
                 matched_ranges.append((len(seq) - algn[1][1][1], len(seq) - algn[1][0][1],
                     seqs[1][algn[1][0][1] : algn[1][1][1]], 1, marker))
         
